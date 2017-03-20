@@ -6,6 +6,9 @@
 ## About
 > This Plugin Allows XCUITests and android Instrumentation tests run on AWS device Farm
 
+#### Note
+> This is the initial test implementation of running Calabash tests on device farm, rather than XCUITests. Currently only tested for iOS.
+
 
 | iOS | Android | Fail |
 |----------|-------------|-------------|
@@ -54,6 +57,32 @@ lane :aws_device_run_ios do
 end
 ```
 
+## Example iOS with Calabash
+
+```ruby
+# Build for AWS testing
+xcodebuild(
+  scheme:          "your.scheme.name.de",
+  destination:     "generic/platform=iOS",
+  configuration:   "Calabash",
+  derivedDataPath: "aws",
+  xcargs:          "GCC_PREPROCESSOR_DEFINITIONS='AWS_UI_TEST' ENABLE_BITCODE=NO CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO build-for-testing"
+)
+
+# Transform .app into AWS compatible IPA
+aws_device_farm_package(
+  derrived_data_path: "aws",
+  configuration:      "Calabash",
+  calabash:           true
+)
+
+# Run tests on AWS Device Farm
+aws_device_farm(
+  name:        "iOSIntegrationTests",
+  device_pool: "Standard"
+)
+```
+
 
 ## Example Android
 
@@ -86,6 +115,7 @@ end
 |  test_binary_path |    |  Path to App Binary |  String |
 |  device_pool | IOS | AWS Device Farm Device Pool | String |
 |  wait_for_completion | true | Wait for Test-Run to be completed | Boolean |
+| calabash | false | Use Calabash tests instead of XCUITests | Boolean | 
 
 
 
