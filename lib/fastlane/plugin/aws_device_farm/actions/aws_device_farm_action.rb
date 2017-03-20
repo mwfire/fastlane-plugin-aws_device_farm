@@ -26,6 +26,23 @@ module Fastlane
         UI.message 'Uploading the application binary. ☕️'
         upload upload, path
 
+        # Upload the calabash test package upload if needed.
+        calabash_upload = nil
+        if params[:calabash_test_package_path]
+          calabash_path    = File.expand_path(params[:calabash_test_package_path])
+          calabash_type    = "CALABASH_TEST_PACKAGE"
+          calabash_upload  = create_project_upload project, calabash_path, calabash_type
+
+          # Upload the application binary.
+          UI.message 'Uploading the calabash test package. ☕️'
+          upload calabash_upload, calabash_path
+
+          # Wait for upload to finish.
+          UI.message 'Waiting for the calabash test package upload to succeed. ☕️'
+          calabash_upload = wait_for_upload calabash_upload
+          raise 'Calabash test package upload failed. 🙈' unless calabash_upload.status == 'SUCCEEDED'
+        end
+
         # Upload the test package if needed.
         test_upload = nil
         if params[:test_binary_path]
@@ -53,7 +70,7 @@ module Fastlane
         raise 'Binary upload failed. 🙈' unless upload.status == 'SUCCEEDED'
 
         # Schedule the run.
-        run = schedule_run params[:run_name], project, device_pool, upload, test_upload, type
+        run = schedule_run params[:run_name], project, device_pool, upload, test_upload, calabash_upload, type
 
         # Wait for run to finish.
         if params[:wait_for_completion]
@@ -115,7 +132,6 @@ module Fastlane
             verify_block: proc do |value|
               raise "Test binary not found at path '#{value}'. 🙈".red unless File.exist?(File.expand_path(value))
             end
-
           ),
           FastlaneCore::ConfigItem.new(
             key:         :path,
@@ -142,6 +158,16 @@ module Fastlane
             is_string:     false,
             optional:      true,
             default_value: true
+          ),
+          FastlaneCore::ConfigItem.new(
+            key:         :calabash_test_package_path,
+            env_name:    'FL_AWS_DEVICE_FARM_CALABASH_TEST_PACKAGE_PATH',
+            description: 'Define the path of the calabash test package (feature folder) to upload to the device farm project',
+            is_string:   true,
+            optional:    true,
+            verify_block: proc do |value|
+              raise "Calabash test package not found at path '#{value}'. 🙈".red unless File.exist?(File.expand_path(value))
+            end
           )
         ]
       end
@@ -154,7 +180,7 @@ module Fastlane
       end
 
       def self.authors
-        ["fousa/fousa", "hjanuschka"]
+        ["fousa/fousa", "hjanuschka", "mwfire"]
       end
 
       def self.is_supported?(platform)
@@ -208,15 +234,22 @@ module Fastlane
         device_pools.device_pools.detect { |p| p.name == device_pool }
       end
 
-      def self.schedule_run(name, project, device_pool, upload, test_upload, type)
+      def self.schedule_run(name, project, device_pool, upload, test_upload, calabash_upload, type)
+
         # Prepare the test hash depening if you passed the test apk.
         test_hash = { type: 'BUILTIN_FUZZ' }
+
         if test_upload
           test_hash[:type] = 'XCTEST_UI'
           if type == "ANDROID_APP"
             test_hash[:type] = 'INSTRUMENTATION'
           end
           test_hash[:test_package_arn] = test_upload.arn
+        end
+
+        if calabash_upload
+          test_hash[:type] = 'CALABASH'
+          test_hash[:test_package_arn] = calabash_upload.arn
         end
 
         @client.schedule_run({
